@@ -1,187 +1,181 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="./libs/d3.js"></script>
-    <script src="libs/d3jstopojson.v1.js"></script>
-    <title>MA Map</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://d3js.org/topojson.v3.min.js"></script>
+    <title>Massachusetts Population Analysis</title>
     <style>
-        /* Tooltip styles for Gini index and general map */
-        #tooltip,
-        #giniTooltip {
-            position: absolute;
-            opacity: 0;
-            top: 0;
-            left: 0;
-            width: auto;
-            padding: 10px;
-            background: white;
-            font-family: sans-serif;
-            font-size: medium;
-            border-radius: 2px;
-            line-height: 1;
-            pointer-events: none;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-
-        /* Path styles for map counties */
-        path {
-            stroke-width: .5px;
-            stroke: black;
-        }
-
-        path:hover {
-            opacity: .6;
-            stroke: black;
-            stroke-width: 2px;
-        }
-
-        /* Flex container for centering maps vertically */
-        .container {
+        body {
+            font-family: Arial, sans-serif;
             display: flex;
-            flex-direction: column;
-            align-items: center;
             justify-content: center;
-            margin: 20px;
+            margin: 0;
+            background-color: #f4f4f9;
         }
 
-        /* Add margins between maps */
-        .map {
-            margin: 20px 0;
-        }
-
-        /* Styling for the title and name */
-        h1 {
-            font-family: 'Arial', sans-serif;
+        .container {
             text-align: center;
+            width: 80%;
+            max-width: 900px;
+            padding: 20px;
+        }
+
+        h1 {
             color: #333;
+            margin-bottom: 5px;
         }
 
         h3 {
-            font-family: 'Arial', sans-serif;
-            text-align: center;
-            color: #666;
+            color: #555;
+            margin-top: 0;
         }
 
-        /* Style for the div wrapping the SVG */
         .map-container {
-            display: flex;
-            justify-content: center;
-            width: 100%;
-        }
-
-        /* Style for the tooltip on the map */
-        .tooltip {
-            position: absolute;
-            background-color: rgba(255, 255, 255, 0.8);
-            border: 1px solid #ddd;
-            padding: 8px;
-            font-size: 12px;
-            pointer-events: none;
-        }
-
-        /* Style for map div */
-        .map {
-            border: 1px solid #ccc;
+            margin: 20px 0;
+            padding: 10px;
+            background-color: #ffffff;
             border-radius: 8px;
+            box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        #tooltip {
+            position: absolute;
+            opacity: 0;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            pointer-events: none;
+            font-size: 0.9em;
+            color: #333;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+        }
+
+        path {
+            stroke: #333;
+            stroke-width: 0.5px;
+            transition: all 0.2s;
+        }
+
+        path:hover {
+            opacity: 0.7;
+            stroke: #222;
+            stroke-width: 1.5px;
         }
     </style>
 </head>
-
 <body>
-    <h1>Population Data Visualization for Massachusetts</h1>
-    <h3>Kathryn Hockenbury</h3>
-    <div id="tooltip"></div>
-    <div id="giniTooltip"></div>
-
     <div class="container">
-        <div class="map" id="mapA"></div>
-        <div class="map" id="mapB"></div>
-        <div class="map" id="mapC"></div>
+        <h1>Massachusetts Population Analysis</h1>
+        <h3>Kathryn Hockenbury</h3>
+        <div id="tooltip"></div>
+        
+        <div class="map-container fig1">
+            <h2>MAP A: Actual Population in 1980</h2>
+        </div>
+        <div class="map-container fig2">
+            <h2>MAP B: Population Change (1980 - 2010)</h2>
+        </div>
+        <div class="map-container fig3">
+            <h2>MAP C: Gini Index (2019)</h2>
+        </div>
     </div>
 
     <script>
-        // Set dimensions
-        const svgWidth = 600;
-        const svgHeight = 400;
+        const svgWidth = 800;
+        const svgHeight = 500;
 
-        // Load data files
-        const MA_counties = "./data/towns.topojson";
-        const gini_index = "./data/gini_index.csv";
+        const MA_counties = "towns.topojson";
+        const gini_index = "gini_index.csv";
+        const countiesJson = "ma_counties.json";
+        const TOPOJSON_OBJECT_NAME = "ma"; // Check your TopoJSON object name.
 
         Promise.all([
             d3.json(MA_counties),
-            d3.csv(gini_index)
-        ]).then(data => {
-            const topology_data = data[0];
-            const gini_data = data[1];
+            d3.csv(gini_index),
+            d3.json(countiesJson)
+        ]).then(([topology_data, csv_data, countiesData]) => {
+            const fipsToCounty = new Map(countiesData.map(d => [d.fips_code, d.county]));
+            const idToData = new Map(csv_data.map(d => [d['Geographic Area Name'], d]));
 
-            // Render maps with different data
-            const renderMap = (topo_data, containerId, colorScale, propertyKey, tooltipLabel, isGiniMap = false) => {
-                const svg = d3.select(containerId).append("svg")
+            const createColorScale = (data, column, interpolator) =>
+                d3.scaleSequential()
+                    .domain(d3.extent(data, d => +d[column]))
+                    .interpolator(interpolator);
+
+            const population1980Scale = createColorScale(csv_data, 'POP1980', d3.interpolateBlues);
+            const populationChangeScale = d3.scaleDiverging()
+                .domain([
+                    d3.min(csv_data, d => +d['POP_CHANGE_1980_2010']),
+                    0,
+                    d3.max(csv_data, d => +d['POP_CHANGE_1980_2010'])
+                ])
+                .interpolator(d3.interpolateRdYlBu);
+            const giniColorScale = createColorScale(csv_data, 'Estimate!!Gini Index', d3.interpolatePurples);
+
+            const generateMap = (topo_data, containerName, colorScale, dataKey, tooltipContent) => {
+                const svg = d3.select(containerName).append("svg")
                     .attr("width", svgWidth)
                     .attr("height", svgHeight);
 
-                const geojson = topojson.feature(topo_data, topo_data.objects.ma);
-
-                const projection = d3.geoMercator()
-                    .fitSize([svgWidth, svgHeight], geojson);
-
+                const geojson = topojson.feature(topo_data, topo_data.objects[TOPOJSON_OBJECT_NAME]);
+                const projection = d3.geoMercator().fitSize([svgWidth, svgHeight], geojson);
                 const geoPath = d3.geoPath().projection(projection);
-
                 const tooltip = d3.select("#tooltip");
-                const giniTooltip = d3.select("#giniTooltip");
 
                 svg.selectAll("path")
                     .data(geojson.features)
                     .enter()
                     .append("path")
                     .attr("d", geoPath)
-                    .attr("fill", d => colorScale(d.properties[propertyKey] || 0))
+                    .attr("fill", d => {
+                        const countyName = fipsToCounty.get(d.properties.fips_code);
+                        const data = idToData.get(countyName);
+                        return data ? colorScale(+data[dataKey]) : "#ccc";
+                    })
                     .on("mouseenter", (event, d) => {
+                        const countyName = fipsToCounty.get(d.properties.fips_code);
+                        const data = idToData.get(countyName);
                         tooltip.transition().duration(200).style("opacity", 0.9);
-                        tooltip.html(`${tooltipLabel}: ${d.properties[propertyKey] || 'N/A'}`)
-                            .style("left", (event.pageX + 10) + "px")
-                            .style("top", (event.pageY - 28) + "px");
-
-                        if (isGiniMap) {
-                            const giniInfo = gini_data.find(g => g.County === d.properties.TOWN);
-                            if (giniInfo) {
-                                giniTooltip.transition().duration(200).style("opacity", 0.9);
-                                giniTooltip.html(`Gini Index (2019): ${giniInfo.Gini_2019}<br>Population: ${giniInfo.Population_2019}`)
-                                    .style("left", (event.pageX + 10) + "px")
-                                    .style("top", (event.pageY + 10) + "px");
-                            }
-                        }
+                        tooltip.html(tooltipContent(data))
+                            .style("left", (event.pageX + 5) + "px")
+                            .style("top", (event.pageY - 5) + "px");
+                    })
+                    .on("mousemove", (event) => {
+                        tooltip.style("left", (event.pageX + 5) + "px")
+                            .style("top", (event.pageY - 5) + "px");
                     })
                     .on("mouseleave", () => {
-                        tooltip.transition().duration(400).style("opacity", 0);
-                        giniTooltip.transition().duration(400).style("opacity", 0);
+                        tooltip.transition().duration(500).style("opacity", 0);
                     });
             };
 
-            // MAP A: Population in 1980
-            const colorScaleA = d3.scaleSequential()
-                .domain([0, 500000]) // Adjust based on population range
-                .interpolator(d3.interpolateBlues);
-            renderMap(topology_data, "#mapA", colorScaleA, "POP1980", "Population in 1980");
+            const population1980Tooltip = data => `
+                <strong>${data?.['Geographic Area Name'] || 'Unknown'}</strong><br>
+                Population (1980): ${data?.['POP1980'] || 'N/A'}
+            `;
 
-            // MAP B: Population Change 1980-2010
-            const colorScaleB = d3.scaleDiverging()
-                .domain([-100000, 0, 100000]) // Adjust for changes
-                .interpolator(d3.interpolateRdBu);
-            renderMap(topology_data, "#mapB", colorScaleB, "POP_CHANGE", "Population Change (1980-2010)");
+            const populationChangeTooltip = data => `
+                <strong>${data?.['Geographic Area Name'] || 'Unknown'}</strong><br>
+                Population Change (1980-2010): ${data?.['POP_CHANGE_1980_2010'] || 'N/A'}
+            `;
 
-            // MAP C: Gini Index 2019 (with additional tooltip for Gini and Population)
-            const colorScaleC = d3.scaleSequential()
-                .domain([0, 1]) // Adjust for Gini index range
-                .interpolator(d3.interpolatePlasma);
-            renderMap(topology_data, "#mapC", colorScaleC, "GINI_2019", "Gini Index (2019)", true);
-        });
+            const giniIndexTooltip = data => `
+                <strong>${data?.['Geographic Area Name'] || 'Unknown'}</strong><br>
+                Gini Index (2019): ${data?.['Estimate!!Gini Index'] || 'No data available'}
+            `;
+
+            generateMap(topology_data, ".fig1", population1980Scale, 'POP1980', population1980Tooltip);
+            generateMap(topology_data, ".fig2", populationChangeScale, 'POP_CHANGE_1980_2010', populationChangeTooltip);
+            generateMap(topology_data, ".fig3", giniColorScale, 'Estimate!!Gini Index', giniIndexTooltip);
+        }).catch(err => console.error("Error loading files:", err));
     </script>
 </body>
-
 </html>
+
+
+
+
